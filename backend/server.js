@@ -1,0 +1,204 @@
+// load local .env for development (optional)
+try { require('dotenv').config(); } catch (e) { /* ignore if dotenv not installed */ }
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
+const db = require("./db");
+const cors = require("cors");
+
+const app = express();
+app.use(cors());
+
+// lightweight health endpoint so clients can verify backend reachability
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", time: new Date().toISOString() });
+});
+
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
+console.log("Using HTTP server for Socket.IO (local dev)");
+
+const rooms = {};
+const socketToRoom = {};
+const socketToUsername = {};
+
+// Initialize DB module if URI provided
+if (process.env.MONGODB_URI) {
+  db.init(process.env.MONGODB_URI, process.env.MONGODB_DBNAME).catch((err) => {
+    console.error('db.init failed', err && err.message ? err.message : err);
+  });
+}
+
+function makeId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+io.on("connection", (socket) => {
+  // Log socket connection with origin if present to help debugging cross-device issues
+  const origin = socket.handshake && socket.handshake.headers && socket.handshake.headers.origin;
+  console.log("🟢 New user connected:", socket.id, "origin:", origin || "(no origin)");
+
+  socket.on("createRoom", async ({ roomId, username }) => {
+    try {
+      if (db.enabled()) {
+        const roomDoc = await db.createOrGetRoom(roomId, username);
+        socket.join(roomId);
+        socketToRoom[socket.id] = roomId;
+        socketToUsername[socket.id] = username;
+        io.to(roomId).emit("roomUpdate", roomDoc);
+        console.log(`${username} created/joined room ${roomId} (persisted)`);
+        return;
+      }
+      // fallback: in-memory
+      if (!rooms[roomId]) {
+        rooms[roomId] = { users: [], messages: [], createdAt: new Date().toISOString() };
+        console.log(`Room ${roomId} created by ${username}`);
+      }
+      if (!rooms[roomId].users.includes(username)) rooms[roomId].users.push(username);
+      socket.join(roomId);
+      socketToRoom[socket.id] = roomId;
+      socketToUsername[socket.id] = username;
+      io.to(roomId).emit("roomUpdate", rooms[roomId]);
+      console.log(`${username} joined room ${roomId}`);
+    } catch (err) {
+      console.error('createRoom error', err);
+      socket.emit('error', 'create_room_failed');
+    }
+  });
+
+  socket.on("joinRoom", async ({ roomId, username }) => {
+    try {
+      if (db.enabled()) {
+        const roomDoc = await db.getRoom(roomId);
+        if (!roomDoc) {
+          socket.emit("error", "Room not found");
+          return;
+        }
+        const updated = await db.addUserToRoom(roomId, username);
+        socket.join(roomId);
+        socketToRoom[socket.id] = roomId;
+        socketToUsername[socket.id] = username;
+        io.to(roomId).emit("roomUpdate", updated);
+        console.log(`${username} joined room ${roomId} (persisted)`);
+        return;
+      }
+
+      if (rooms[roomId]) {
+        if (!rooms[roomId].users.includes(username)) rooms[roomId].users.push(username);
+        socket.join(roomId);
+        socketToRoom[socket.id] = roomId;
+        socketToUsername[socket.id] = username;
+        io.to(roomId).emit("roomUpdate", rooms[roomId]);
+        console.log(`${username} joined room ${roomId}`);
+      } else {
+        socket.emit("error", "Room not found");
+      }
+    } catch (err) {
+      console.error('joinRoom error', err);
+      socket.emit('error', 'join_room_failed');
+    }
+  });
+
+  // Accept optional acknowledgement callback as third param
+  socket.on("chatMessage", async ({ roomId, username, message }, ack) => {
+    try {
+      const saved = {
+        id: makeId(),
+        username,
+        message,
+        timestamp: new Date().toISOString(),
+      };
+
+      if (db.enabled()) {
+        await db.addMessageToRoom(roomId, saved);
+        io.to(roomId).emit("newMessage", saved);
+        if (typeof ack === "function") ack(saved);
+        return;
+      }
+
+      if (rooms[roomId]) {
+        rooms[roomId].messages.push(saved);
+        io.to(roomId).emit("newMessage", saved);
+        if (typeof ack === "function") ack(saved);
+      } else if (typeof ack === "function") {
+        ack({ error: "room_not_found" });
+      }
+    } catch (err) {
+      console.error('chatMessage error', err);
+      if (typeof ack === 'function') ack({ error: 'server_error' });
+    }
+  });
+
+  socket.on("disconnect", async () => {
+    console.log("🔴 User disconnected:", socket.id);
+    const roomId = socketToRoom[socket.id];
+    const username = socketToUsername[socket.id];
+    if (roomId) {
+      try {
+        if (db.enabled()) {
+          const roomDoc = await db.removeUserFromRoom(roomId, username);
+          socket.leave(roomId);
+          io.to(roomId).emit("roomUpdate", roomDoc);
+        } else if (rooms[roomId]) {
+          rooms[roomId].users = rooms[roomId].users.filter((u) => u !== username);
+          socket.leave(roomId);
+          io.to(roomId).emit("roomUpdate", rooms[roomId]);
+          if (rooms[roomId].users.length === 0) {
+            delete rooms[roomId];
+            console.log(`Room ${roomId} deleted (empty)`);
+          }
+        }
+      } catch (err) {
+        console.error('disconnect cleanup error', err);
+      }
+    }
+    delete socketToRoom[socket.id];
+    delete socketToUsername[socket.id];
+  });
+
+  // WebRTC signaling helpers
+  // join-room: join a socket.io room and notify other peers
+  socket.on("join-room", (roomId, userName) => {
+    socket.join(roomId);
+    console.log(`${userName} joined ${roomId}`);
+    // notify other peers in the room that a new user joined
+    socket.to(roomId).emit("user-joined", socket.id);
+  });
+
+  // Forward SDP offers to other peers in the room
+  socket.on("offer", (data) => {
+    // data should include { roomId, from, offer }
+    if (data && data.roomId) {
+      socket.to(data.roomId).emit("offer", data);
+    }
+  });
+
+  // Forward SDP answers to other peers in the room
+  socket.on("answer", (data) => {
+    // data should include { roomId, from, answer }
+    if (data && data.roomId) {
+      socket.to(data.roomId).emit("answer", data);
+    }
+  });
+
+  // Forward ICE candidates to other peers in the room
+  socket.on("ice-candidate", (data) => {
+    // data should include { roomId, from, candidate }
+    if (data && data.roomId) {
+      socket.to(data.roomId).emit("ice-candidate", data.candidate || data);
+    }
+  });
+});
+
+// bind to 0.0.0.0 so the server is reachable from other devices on the LAN
+// bind to 0.0.0.0 so the server is reachable from other devices on the LAN
+// handle startup errors (EADDRINUSE etc.) with a helpful message
+server.on("error", (err) => {
+  console.error("Server error during startup:", err && err.code ? `${err.code} - ${err.message}` : err);
+  process.exit(1);
+});
+
+server.listen(4000, "0.0.0.0", () => {
+  const protocol = "http"; // local dev uses HTTP
+  console.log(`🚀 Server running on ${protocol}://0.0.0.0:4000 (listening on all interfaces)`);
+});
