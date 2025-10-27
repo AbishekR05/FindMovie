@@ -5,6 +5,8 @@ const http = require("http");
 const { Server } = require("socket.io");
 const db = require("./db");
 const cors = require("cors");
+const fs = require("fs");
+const path = require("path");
 
 const app = express();
 app.use(cors());
@@ -12,6 +14,43 @@ app.use(cors());
 // lightweight health endpoint so clients can verify backend reachability
 app.get("/health", (req, res) => {
   res.json({ status: "ok", time: new Date().toISOString() });
+});
+
+// Load the movie dataset (Final_with_difficulty.json) once at startup if present
+let MOVIES = null;
+try {
+  const datasetPath = path.resolve(__dirname, "..", "Final_with_difficulty.json");
+  if (fs.existsSync(datasetPath)) {
+    const raw = fs.readFileSync(datasetPath, "utf8");
+    MOVIES = JSON.parse(raw);
+    console.log(`Loaded ${Array.isArray(MOVIES) ? MOVIES.length : 0} movies from Final_with_difficulty.json`);
+  } else {
+    console.warn("Final_with_difficulty.json not found at", datasetPath);
+  }
+} catch (err) {
+  console.error("Failed to load movie dataset:", err && err.message ? err.message : err);
+  MOVIES = null;
+}
+
+// API to fetch movies from the dataset loaded above
+app.get("/api/movies/random", (req, res) => {
+  if (!Array.isArray(MOVIES) || MOVIES.length === 0) {
+    return res.status(500).json({ error: "movies_not_available" });
+  }
+  // optional difficulty filter
+  const { difficulty } = req.query;
+  let pool = MOVIES;
+  if (difficulty) pool = MOVIES.filter((m) => String(m.difficulty || "").toLowerCase() === String(difficulty).toLowerCase());
+  if (!pool || pool.length === 0) return res.status(404).json({ error: "no_movies_for_filter" });
+  const idx = Math.floor(Math.random() * pool.length);
+  res.json({ movie: pool[idx], index: idx });
+});
+
+app.get("/api/movies/:index", (req, res) => {
+  const idx = Number(req.params.index);
+  if (!Array.isArray(MOVIES) || MOVIES.length === 0) return res.status(500).json({ error: "movies_not_available" });
+  if (!Number.isFinite(idx) || idx < 0 || idx >= MOVIES.length) return res.status(400).json({ error: "invalid_index" });
+  res.json({ movie: MOVIES[idx], index: idx });
 });
 
 const server = http.createServer(app);

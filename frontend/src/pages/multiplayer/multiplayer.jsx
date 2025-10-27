@@ -10,6 +10,12 @@ export default function Multiplayer() {
   const [joined, setJoined] = useState(false);
   const [mode, setMode] = useState(null); // 'create' | 'join' | null
 
+  // movie filter for puzzle (same as SinglePlayer)
+  const [difficulty, setDifficulty] = useState("all"); // all | easy | medium | difficult
+  const [movie, setMovie] = useState(null);
+  const [loadingMovie, setLoadingMovie] = useState(false);
+  const [movieError, setMovieError] = useState(null);
+
   const [socketStatus, setSocketStatus] = useState("idle");
   const [socketUrlString, setSocketUrlString] = useState("");
 
@@ -61,6 +67,44 @@ export default function Multiplayer() {
       }
     };
   }, []);
+
+  // fetch a random movie for the multiplayer puzzle (when joined or when difficulty changes)
+  useEffect(() => {
+    let mounted = true;
+    const base = process.env.REACT_APP_SOCKET_URL || `http://${window.location.hostname || "localhost"}:4000`;
+    const fetchMovie = async () => {
+      setLoadingMovie(true);
+      setMovieError(null);
+      try {
+        const q = difficulty && difficulty !== "all" ? `?difficulty=${encodeURIComponent(difficulty)}` : "";
+        const res = await fetch(`${base}/api/movies/random${q}`);
+        const ct = res.headers.get("content-type") || "";
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(`HTTP ${res.status} ${res.statusText}: ${text.slice(0,200)}`);
+        }
+        if (!ct.includes("application/json")) {
+          const text = await res.text();
+          throw new Error(`non_json_response: ${text.slice(0,200)}`);
+        }
+        const data = await res.json();
+        if (!mounted) return;
+        if (data && data.movie) setMovie(data.movie);
+        else setMovieError("no_movie_returned");
+      } catch (err) {
+        console.error("fetch movie failed", err);
+        if (mounted) setMovieError(err && err.message ? err.message : String(err));
+      } finally {
+        if (mounted) setLoadingMovie(false);
+      }
+    };
+
+    // only fetch when user has joined the room (so multiplayer puzzle is meaningful),
+    // however allow fetching even before join so host can prepare
+    fetchMovie();
+
+    return () => { mounted = false };
+  }, [difficulty]);
 
   // legacy single-click join removed; use handleCreate / handleJoin instead
 
@@ -146,7 +190,44 @@ export default function Multiplayer() {
 
           <div className="game-layout">
             <div className="puzzle-panel">
-              <PuzzleGrid />
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column' }}>
+                  <div style={{ marginBottom: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <label htmlFor="mp-difficulty" style={{ fontWeight: 600 }}>Filter:</label>
+                    <select id="mp-difficulty" value={difficulty} onChange={(e) => setDifficulty(e.target.value)} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #ddd' }}>
+                      <option value="all">All</option>
+                      <option value="easy">Easy</option>
+                      <option value="medium">Medium</option>
+                      <option value="difficult">Difficult</option>
+                    </select>
+                    <button onClick={() => {
+                      // manual refresh: fetch a new movie with current difficulty
+                      const base = process.env.REACT_APP_SOCKET_URL || `http://${window.location.hostname || "localhost"}:4000`;
+                      setLoadingMovie(true);
+                      setMovieError(null);
+                      const q = difficulty && difficulty !== "all" ? `?difficulty=${encodeURIComponent(difficulty)}` : "";
+                      fetch(`${base}/api/movies/random${q}`)
+                        .then(async (res) => {
+                          const ct = res.headers.get("content-type") || "";
+                          if (!res.ok) {
+                            const text = await res.text();
+                            throw new Error(`HTTP ${res.status} ${res.statusText}: ${text.slice(0,200)}`);
+                          }
+                          if (!ct.includes("application/json")) {
+                            const text = await res.text();
+                            throw new Error(`non_json_response: ${text.slice(0,200)}`);
+                          }
+                          return res.json();
+                        })
+                        .then((data) => { if (data && data.movie) setMovie(data.movie); else setMovieError('no_movie_returned') })
+                        .catch((err) => { console.error('fetch movie failed', err); setMovieError(err && err.message ? err.message : String(err)) })
+                        .finally(() => setLoadingMovie(false));
+                    }} style={{ padding: '6px 10px', borderRadius: 6 }}>Refresh</button>
+                  </div>
+                  <div style={{ textAlign: 'center', marginBottom: 8 }}>
+                    {loadingMovie ? <div>Loading puzzle movie…</div> : movieError ? <div style={{ color: 'crimson' }}>Error: {String(movieError)}</div> : movie ? <div style={{ fontSize: 14, color: '#444' }}>Puzzle: <strong>{movie.title}</strong> <span style={{ color: '#777', fontSize: 12 }}>• {movie.difficulty || 'n/a'}</span></div> : null}
+                  </div>
+                  <PuzzleGrid movie={movie} />
+                </div>
             </div>
 
             <div className="sidebar-panel">

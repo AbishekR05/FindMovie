@@ -30,3 +30,24 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outlin
 .single-wrapper { text-align: center; padding: 24px; }
 .section-title { margin: 6px 0 0; }
 .section-subtitle { margin: 6px 0 18px; color: var(--muted); }
+
+/* floating filter placed in top-right under header */
+.page-filter {
+  position: fixed;
+  top: 56px; /* just below header */
+  /* align under the centered header area (1040px) and near the nav buttons */
+  /* align roughly under the header's nav area (near the Single/Multiplayer buttons) */
+  right: calc((100% - 1040px) / 2 + 20px);
+  background: white;
+  border: 1px solid rgba(0,0,0,0.06);
+  padding: 8px 10px;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+}
+
+@media (max-width: 720px) {
+  .page-filter { position: static; margin: 12px auto 0; display: inline-flex; }
+}
