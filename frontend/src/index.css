@@ -51,3 +51,57 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outlin
 @media (max-width: 720px) {
   .page-filter { position: static; margin: 12px auto 0; display: inline-flex; }
 }
+
+/* Improved select and button styles for the floating filter */
+.filter-select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  padding: 8px 36px 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(0,0,0,0.08);
+  background: #fff url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%23666' d='M6 8L0 0h12z'/></svg>") no-repeat right 10px center;
+  background-size: 12px 8px;
+  font-weight: 600;
+  color: #222;
+  transition: box-shadow .12s ease, border-color .12s ease;
+}
+.filter-select:focus {
+  outline: none;
+  border-color: var(--accent-dark);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+.filter-button {
+  margin-left: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(0,0,0,0.08);
+  background: linear-gradient(180deg, #fff 0%, #fafafa 100%);
+  cursor: pointer;
+  font-weight: 700;
+  color: #222;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+  transition: transform .08s ease, box-shadow .12s ease;
+}
+.filter-button:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(0,0,0,0.10); }
+.filter-button:active { transform: translateY(0); }
+
+/* Reusable accent button (matches other yellow gradient buttons) */
+.accent-btn {
+  background: linear-gradient(180deg, #ffd54f, #f2b91f);
+  border: none;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(22,27,36,0.06);
+  transition: transform .12s ease, box-shadow .12s ease;
+  color: #3b2b00;
+}
+.accent-btn:hover:not(:disabled) { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(22,27,36,0.08); }
+.accent-btn:disabled { opacity: .6; cursor: not-allowed; }
+
+@media (max-width: 480px) {
+  .filter-select { padding-right: 32px; font-size: 14px; }
+  .filter-button { padding: 8px 10px; margin-left: 6px; font-size: 14px; }
+}

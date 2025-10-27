@@ -70,12 +70,14 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 400px;
-  height: 500px;
+  max-width: none;
+  min-height: 220px;
+  height: auto;
   background: white;
   border-radius: 10px;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 6px 18px rgba(22, 27, 36, 0.06);
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 .chat-floating {
@@ -147,11 +149,12 @@
 
 .chat-messages {
   flex: 1;
-  padding: 15px;
+  padding: 12px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  max-height: 340px;
 }
 
 .message {
@@ -179,25 +182,31 @@
 
 .chat-input {
   display: flex;
-  padding: 10px;
-  border-top: 1px solid #ccc;
+  padding: 12px;
+  border-top: 1px solid #eee;
+  gap: 8px;
+  align-items: center;
 }
 
 .chat-input input {
   flex: 1;
-  padding: 10px;
-  border-radius: 5px;
-  border: 1px solid #ccc;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #e6e6e6;
+  background: #fff;
 }
 
 .chat-input button {
-  margin-left: 10px;
   background-color: #ffd54f;
   border: none;
-  border-radius: 5px;
-  padding: 10px;
+  border-radius: 8px;
+  padding: 8px 14px;
   cursor: pointer;
+  font-weight: 700;
+  color: #3b2b00;
+  box-shadow: 0 6px 14px rgba(0,0,0,0.06);
 }
+.chat-input button:disabled { opacity: 0.6; cursor: not-allowed }
 
 /* new layout & utility classes */
 .multi-page { padding: 20px; }
@@ -225,9 +234,36 @@
 .room-info { margin-top: 8px; }
 
 .game-layout { display: flex; gap: 20px; align-items: flex-start; }
-.puzzle-panel { flex: 1; }
+.puzzle-panel { flex: 1; display: flex; }
+.puzzle-wrapper { flex: 1; display: flex; justify-content: center; align-items: center; }
 .sidebar-panel { width: 360px; }
+
+/* left rail specific styles */
+.left-rail { display: flex; flex-direction: column; gap: 12px; }
+.players-card { background: white; border-radius: 10px; box-shadow: 0 6px 18px rgba(22,27,36,0.06); padding: 12px; }
+.players-header { font-weight: 700; padding-bottom: 8px; }
+.players-list { display: flex; flex-direction: column; gap: 8px; max-height: 140px; overflow-y: auto; }
+.player { display: flex; gap: 10px; align-items: center; padding: 8px; border-radius: 8px; }
+.player.me { background: linear-gradient(90deg, rgba(255,245,224,1), rgba(255,250,240,1)); }
+.avatar { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(180deg,#ffd54f,#f2b91f); display: flex; align-items: center; justify-content: center; color: #3b2b00; font-weight: 800; }
+.player-meta { display: flex; flex-direction: column; }
+.player-name { font-weight: 700; }
+.mic-status { font-size: 12px; color: #666; }
+.no-players { color: #777; padding: 8px; }
+
+/* Chat in left rail should stretch */
+.chat-left { height: calc(100% - 220px); }
+.chat-left .chat-messages { height: calc(100% - 120px); }
 
 .voice-section { margin-bottom: 12px; }
 .voice-join { margin-top: 20px; }
 .error-text { color: red; margin-top: 8px; }
+
+/* center puzzle nicely on larger screens */
+.puzzle-panel .puzzle-wrapper { padding: 24px; background: linear-gradient(180deg, #ffffff, #fbfbfb); border-radius: 12px; box-shadow: 0 8px 30px rgba(22,27,36,0.04); }
+
+@media (max-width: 900px) {
+  .game-layout { flex-direction: column; }
+  .sidebar-panel { width: 100%; }
+  .puzzle-panel { width: 100%; }
+}

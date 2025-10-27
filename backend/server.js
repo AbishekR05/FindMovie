@@ -4,6 +4,7 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const db = require("./db");
+const nameIndex = require("./nameIndex");
 const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
@@ -24,6 +25,12 @@ try {
     const raw = fs.readFileSync(datasetPath, "utf8");
     MOVIES = JSON.parse(raw);
     console.log(`Loaded ${Array.isArray(MOVIES) ? MOVIES.length : 0} movies from Final_with_difficulty.json`);
+    try {
+      nameIndex.init(MOVIES);
+      console.log('Built name index for fast first-name lookups');
+    } catch (e) {
+      console.warn('Failed to build name index', e && e.message ? e.message : e);
+    }
   } else {
     console.warn("Final_with_difficulty.json not found at", datasetPath);
   }
@@ -32,6 +39,17 @@ try {
   MOVIES = null;
 }
 
+// helper to pick a random movie (optionally by difficulty)
+function chooseRandomMovie(difficulty) {
+  if (!Array.isArray(MOVIES) || MOVIES.length === 0) return null;
+  let pool = MOVIES;
+  if (difficulty) {
+    pool = MOVIES.filter((m) => String(m.difficulty || "").toLowerCase() === String(difficulty).toLowerCase());
+  }
+  if (!pool || pool.length === 0) return null;
+  const idx = Math.floor(Math.random() * pool.length);
+  return { movie: pool[idx], index: idx };
+}
 // API to fetch movies from the dataset loaded above
 app.get("/api/movies/random", (req, res) => {
   if (!Array.isArray(MOVIES) || MOVIES.length === 0) {
@@ -51,6 +69,22 @@ app.get("/api/movies/:index", (req, res) => {
   if (!Array.isArray(MOVIES) || MOVIES.length === 0) return res.status(500).json({ error: "movies_not_available" });
   if (!Number.isFinite(idx) || idx < 0 || idx >= MOVIES.length) return res.status(400).json({ error: "invalid_index" });
   res.json({ movie: MOVIES[idx], index: idx });
+});
+
+// Return how many movies have a given first-name for a specified field (maleLead/femaleLead)
+app.get('/api/first-name-count', (req, res) => {
+  if (!Array.isArray(MOVIES) || MOVIES.length === 0) return res.status(500).json({ error: 'movies_not_available' });
+  const field = req.query.field;
+  const name = req.query.name;
+  if (!field || !name) return res.status(400).json({ error: 'missing_field_or_name' });
+  if (!['maleLead','femaleLead'].includes(field)) return res.status(400).json({ error: 'invalid_field' });
+  try {
+    const count = nameIndex.getFirstNameCount(field, name);
+    return res.json({ count });
+  } catch (err) {
+    console.error('first-name-count error', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
 });
 
 const server = http.createServer(app);
@@ -84,13 +118,26 @@ io.on("connection", (socket) => {
         socket.join(roomId);
         socketToRoom[socket.id] = roomId;
         socketToUsername[socket.id] = username;
-        io.to(roomId).emit("roomUpdate", roomDoc);
+        // ensure a puzzle exists for the room; if db didn't include one, pick and broadcast without persisting
+        // ensure a host field is present in the broadcasted room (non-persisted if DB doesn't have it)
+        const broadcastRoom = Object.assign({}, roomDoc);
+        if (!broadcastRoom.host) broadcastRoom.host = username;
+        if (!broadcastRoom.currentMovie) {
+          const chosen = chooseRandomMovie();
+          broadcastRoom.currentMovie = chosen;
+        }
+        io.to(roomId).emit("roomUpdate", broadcastRoom);
         console.log(`${username} created/joined room ${roomId} (persisted)`);
         return;
       }
       // fallback: in-memory
       if (!rooms[roomId]) {
         rooms[roomId] = { users: [], messages: [], createdAt: new Date().toISOString() };
+        // choose an initial puzzle for the room
+        const chosen = chooseRandomMovie();
+        if (chosen) rooms[roomId].currentMovie = chosen;
+        // set creator as host for in-memory rooms
+        rooms[roomId].host = username;
         console.log(`Room ${roomId} created by ${username}`);
       }
       if (!rooms[roomId].users.includes(username)) rooms[roomId].users.push(username);
@@ -117,7 +164,14 @@ io.on("connection", (socket) => {
         socket.join(roomId);
         socketToRoom[socket.id] = roomId;
         socketToUsername[socket.id] = username;
-        io.to(roomId).emit("roomUpdate", updated);
+        // include host if persisted room doesn't have one (broadcast-only)
+        const broadcastRoom = Object.assign({}, updated);
+        if (!broadcastRoom.host) broadcastRoom.host = username;
+        if (!broadcastRoom.currentMovie) {
+          const chosen = chooseRandomMovie();
+          broadcastRoom.currentMovie = chosen;
+        }
+        io.to(roomId).emit("roomUpdate", broadcastRoom);
         console.log(`${username} joined room ${roomId} (persisted)`);
         return;
       }
@@ -135,6 +189,48 @@ io.on("connection", (socket) => {
     } catch (err) {
       console.error('joinRoom error', err);
       socket.emit('error', 'join_room_failed');
+    }
+  });
+
+  // Request server to pick a new puzzle for the room and broadcast it (host-only)
+  socket.on("nextPuzzle", async ({ roomId, difficulty } = {}, ack) => {
+    try {
+      // determine host for the room
+      let host = null;
+      if (rooms[roomId] && rooms[roomId].host) host = rooms[roomId].host;
+      if (!host && db.enabled()) {
+        try {
+          const roomDoc = await db.getRoom(roomId);
+          if (roomDoc && roomDoc.host) host = roomDoc.host;
+        } catch (e) {
+          // ignore db errors here
+        }
+      }
+
+      const requester = socketToUsername[socket.id];
+      if (host && requester !== host) {
+        if (typeof ack === 'function') ack({ error: 'not_host' });
+        return;
+      }
+
+      const chosen = chooseRandomMovie(difficulty);
+      if (!chosen) {
+        if (typeof ack === 'function') ack({ error: 'no_movies_available' });
+        return;
+      }
+      // update in-memory room if present
+      if (rooms[roomId]) {
+        rooms[roomId].currentMovie = chosen;
+        io.to(roomId).emit('roomUpdate', rooms[roomId]);
+        if (typeof ack === 'function') ack({ ok: true, movie: chosen });
+        return;
+      }
+      // otherwise just broadcast to the room sockets
+      io.to(roomId).emit('puzzleUpdate', chosen);
+      if (typeof ack === 'function') ack({ ok: true, movie: chosen });
+    } catch (err) {
+      console.error('nextPuzzle error', err);
+      if (typeof ack === 'function') ack({ error: 'server_error' });
     }
   });
 

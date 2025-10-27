@@ -80,13 +80,13 @@ const SinglePlayer = () => {
       {/* Floating filter in top-right below header */}
       <div className="page-filter">
         <label htmlFor="difficulty-select" style={{ marginRight: 8, fontWeight: 600 }}>Filter</label>
-        <select id="difficulty-select" value={difficulty} onChange={(e) => setDifficulty(e.target.value)} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #ddd' }}>
+        <select id="difficulty-select" className="filter-select" value={difficulty} onChange={(e) => setDifficulty(e.target.value)} aria-label="Select difficulty">
           <option value="all">All</option>
           <option value="easy">Easy</option>
           <option value="medium">Medium</option>
           <option value="difficult">Difficult</option>
         </select>
-        <button onClick={handleRefresh} style={{ marginLeft: 8, padding: '6px 10px', borderRadius: 6 }}>Refresh</button>
+        <button onClick={handleRefresh} className="filter-button" aria-label="Refresh movie">Refresh</button>
       </div>
       <h2 className="section-title">🎬 Single Player Mode</h2>
       <p className="section-subtitle">Flip the tiles and guess the movie.</p>
@@ -105,7 +105,7 @@ const SinglePlayer = () => {
             <div style={{ fontSize: 16, color: "#444" }}>Now showing: <strong>{movie.title}</strong></div>
             <div style={{ fontSize: 13, color: "#777" }}>{movie.year} • difficulty: {movie.difficulty || "n/a"}</div>
           </div>
-          <PuzzleGrid movie={movie} />
+          <PuzzleGrid movie={movie} onAllFound={() => setTimeout(() => handleRefresh(), 1200)} />
         </div>
       )}
     </div>

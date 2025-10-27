@@ -8,6 +8,7 @@ const VoiceChat = ({ roomId, userName, socket: externalSocket }) => {
   const socket = externalSocket || io(socketUrl);
   const [joined, setJoined] = useState(false);
   const [error, setError] = useState(null);
+  const [isMuted, setIsMuted] = useState(false);
   const localStreamRef = useRef(null);
   const remoteAudioRef = useRef(null);
   const peerConnectionRef = useRef(null);
@@ -86,6 +87,54 @@ const VoiceChat = ({ roomId, userName, socket: externalSocket }) => {
     // 7. Join the room
     socket.emit("join-room", roomId, userName);
     setJoined(true);
+    setIsMuted(false);
+  };
+
+  const leaveRoom = () => {
+    try {
+      // notify server (optional)
+      try { socket.emit('leave-room', roomId, userName); } catch (e) {}
+
+      // remove signaling listeners
+      try {
+        socket.off("user-joined");
+        socket.off("offer");
+        socket.off("answer");
+        socket.off("ice-candidate");
+      } catch (e) {}
+
+      // close peer connection
+      if (peerConnectionRef.current) {
+        try { peerConnectionRef.current.close(); } catch (e) {}
+        peerConnectionRef.current = null;
+      }
+
+      // stop local tracks
+      if (localStreamRef.current) {
+        try { localStreamRef.current.getTracks().forEach((t) => t.stop()); } catch (e) {}
+        localStreamRef.current = null;
+      }
+
+      setJoined(false);
+      setError(null);
+  setIsMuted(false);
+    } catch (e) {
+      console.warn('leaveRoom cleanup error', e);
+      setJoined(false);
+    }
+  };
+
+  const toggleMute = () => {
+    try {
+      if (!localStreamRef.current) return;
+      const tracks = localStreamRef.current.getAudioTracks();
+      if (!tracks || tracks.length === 0) return;
+      const newState = !isMuted;
+      tracks.forEach((t) => { try { t.enabled = !newState; } catch(e){} });
+      setIsMuted(newState);
+    } catch (e) {
+      console.error('toggleMute error', e);
+    }
   };
 
   // cleanup on unmount: remove signaling listeners and stop local tracks
@@ -116,11 +165,17 @@ const VoiceChat = ({ roomId, userName, socket: externalSocket }) => {
     <div className="voice-join">
       {!joined ? (
         <>
-          <button onClick={joinRoom}>🎙️ Join Voice Chat</button>
+          <button className="accent-btn" onClick={joinRoom} disabled={joined}>🎙️ Join Voice Chat</button>
           {error && <div className="error-text">{error}</div>}
         </>
       ) : (
-        <p>Connected to voice chat</p>
+        <>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <p style={{ margin: 0 }}>Connected to voice chat</p>
+            <button className="accent-btn" onClick={toggleMute} style={{ marginLeft: 8 }}>{isMuted ? 'Unmute' : 'Mute'}</button>
+            <button className="accent-btn" onClick={leaveRoom} style={{ marginLeft: 8 }}>✖️ Leave</button>
+          </div>
+        </>
       )}
       <audio ref={remoteAudioRef} autoPlay />
     </div>
