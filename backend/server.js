@@ -12,9 +12,10 @@ const path = require("path");
 const app = express();
 app.use(cors());
 
-// lightweight health endpoint so clients can verify backend reachability
+// Expose DB status as part of health so it's easy to verify Atlas connectivity
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", time: new Date().toISOString() });
+  const dbAvailable = !!(db && typeof db.enabled === 'function' && db.enabled());
+  res.json({ status: "ok", time: new Date().toISOString(), dbConnected: dbAvailable });
 });
 
 // Load the movie dataset (Final_with_difficulty.json) once at startup if present
@@ -94,6 +95,8 @@ console.log("Using HTTP server for Socket.IO (local dev)");
 const rooms = {};
 const socketToRoom = {};
 const socketToUsername = {};
+// simple map to prevent concurrent nextPuzzle picks per room
+const roomNextInProgress = {};
 
 // Initialize DB module if URI provided
 if (process.env.MONGODB_URI) {
@@ -195,39 +198,51 @@ io.on("connection", (socket) => {
   // Request server to pick a new puzzle for the room and broadcast it (host-only)
   socket.on("nextPuzzle", async ({ roomId, difficulty } = {}, ack) => {
     try {
-      // determine host for the room
-      let host = null;
-      if (rooms[roomId] && rooms[roomId].host) host = rooms[roomId].host;
-      if (!host && db.enabled()) {
-        try {
-          const roomDoc = await db.getRoom(roomId);
-          if (roomDoc && roomDoc.host) host = roomDoc.host;
-        } catch (e) {
-          // ignore db errors here
-        }
-      }
 
-      const requester = socketToUsername[socket.id];
-      if (host && requester !== host) {
-        if (typeof ack === 'function') ack({ error: 'not_host' });
-        return;
-      }
+          // Allow any client to request the next puzzle (auto-advance when solved by any player).
+          // To avoid race conditions (multiple clients finishing at almost the same time),
+          // use a simple per-room lock to ignore concurrent nextPuzzle picks for the same room.
+          if (!roomNextInProgress[roomId]) roomNextInProgress[roomId] = false;
+          if (roomNextInProgress[roomId]) {
+            if (typeof ack === 'function') ack({ error: 'busy' });
+            return;
+          }
+          roomNextInProgress[roomId] = true;
 
       const chosen = chooseRandomMovie(difficulty);
       if (!chosen) {
         if (typeof ack === 'function') ack({ error: 'no_movies_available' });
         return;
       }
-      // update in-memory room if present
-      if (rooms[roomId]) {
-        rooms[roomId].currentMovie = chosen;
-        io.to(roomId).emit('roomUpdate', rooms[roomId]);
+      try {
+        // update in-memory room if present
+        if (rooms[roomId]) {
+          rooms[roomId].currentMovie = chosen;
+          io.to(roomId).emit('roomUpdate', rooms[roomId]);
+          if (typeof ack === 'function') ack({ ok: true, movie: chosen });
+          return;
+        }
+
+        // if DB is enabled, persist the currentMovie so the room doc remains authoritative
+        if (db.enabled()) {
+          try {
+            const updated = await db.setCurrentMovie(roomId, chosen);
+            // broadcast full room update when we have a persisted room
+            io.to(roomId).emit('roomUpdate', updated);
+            if (typeof ack === 'function') ack({ ok: true, movie: chosen });
+            return;
+          } catch (e) {
+            console.warn('nextPuzzle: failed to persist currentMovie, falling back to broadcast', e && e.message ? e.message : e);
+          }
+        }
+
+        // otherwise just broadcast to the room sockets (non-persisted)
+        io.to(roomId).emit('puzzleUpdate', chosen);
         if (typeof ack === 'function') ack({ ok: true, movie: chosen });
-        return;
+      } finally {
+        // release lock regardless of success/failure
+        roomNextInProgress[roomId] = false;
       }
-      // otherwise just broadcast to the room sockets
-      io.to(roomId).emit('puzzleUpdate', chosen);
-      if (typeof ack === 'function') ack({ ok: true, movie: chosen });
     } catch (err) {
       console.error('nextPuzzle error', err);
       if (typeof ack === 'function') ack({ error: 'server_error' });

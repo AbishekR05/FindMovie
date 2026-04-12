@@ -1,0 +1,25 @@
+:root{--bg:#fff;--muted:#666;--accent:#ffd54f}
+*{box-sizing:border-box}
+body{font-family:Inter,system-ui,Segoe UI,Roboto,Arial;line-height:1.4;margin:0;background:#f6f7f9;color:#111}
+.wrap{max-width:1100px;margin:20px auto;padding:18px}
+.header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.header h1{margin:0;font-size:20px}
+.controls{display:flex;gap:8px;align-items:center}
+.controls input{padding:8px;border-radius:8px;border:1px solid #e6e6e6}
+.controls .accent{background:linear-gradient(180deg,#ffd54f,#f2b91f);border:none;padding:8px 12px;border-radius:8px;font-weight:700;cursor:pointer}
+.main{display:flex;gap:16px;margin-top:18px}
+.rooms{width:320px}
+.rooms .list,.messages .list{background:#fff;padding:8px;border-radius:8px;min-height:240px;box-shadow:0 6px 18px rgba(0,0,0,0.04)}
+.rooms-ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.room-item{padding:10px;border-radius:8px;border:1px solid transparent;cursor:pointer}
+.room-item:hover{background:#fafafa}
+.room-id{font-weight:700}
+.room-meta{font-size:12px;color:var(--muted)}
+.msg-row{padding:10px;border-bottom:1px solid #f4f4f6}
+.msg-meta{font-size:13px;color:#222}
+.msg-body{margin-top:6px}
+.muted{color:var(--muted)}
+.error{color:crimson}
+.small{font-size:12px}
+.loading{opacity:0.6}
+.footer{margin-top:18px}

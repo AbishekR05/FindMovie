@@ -73,6 +73,19 @@ const PuzzleGrid = ({ movie, onSubmitGuess, onAllFound }) => {
 
   const activeMovie = movie || sampleMovie;
 
+  // Reset grid state when the movie prop changes (new puzzle)
+  useEffect(() => {
+    // reset locks, statuses, selections and confetti when a new movie is supplied
+    setTileLocked([false, false, false, false]);
+    setTileStatus([null, null, null, null]);
+    setSelectedCells([]);
+    setAnswerText("");
+    setConfettiPlayed(false);
+    // clear any outstanding timeouts
+    Object.values(tileTimeouts.current || {}).forEach((t) => t && clearTimeout(t));
+    tileTimeouts.current = {};
+  }, [activeMovie && JSON.stringify([activeMovie.title, activeMovie.maleLead, activeMovie.femaleLead, (activeMovie.songs && activeMovie.songs[0]) || ''])]);
+
   const initials = useMemo(() => {
     const safe = (s) => (typeof s === "string" && s.trim().length > 0 ? s.trim() : "?");
 

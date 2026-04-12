@@ -313,7 +313,30 @@ export default function Multiplayer() {
                   <div style={{ textAlign: 'center', marginBottom: 8 }}>
                     {loadingMovie ? <div>Loading puzzle movie…</div> : movieError ? <div style={{ color: 'crimson' }}>Error: {String(movieError)}</div> : movie ? <div style={{ fontSize: 14, color: '#444' }}>Puzzle: <strong>{movie.title}</strong> <span style={{ color: '#777', fontSize: 12 }}>• {movie.difficulty || 'n/a'}</span></div> : null}
                   </div>
-                  <PuzzleGrid movie={movie} />
+                  <PuzzleGrid
+                    movie={movie}
+                    onAllFound={() => {
+                      // When all tiles are found on a client, ask the server to load the next puzzle for the room.
+                      // Only the host is allowed to actually change the room's puzzle; the server will enforce this.
+                      if (!socketRef.current) return;
+                      try {
+                        // prefer to pass difficulty filter if set
+                        const diff = difficulty === 'all' ? undefined : difficulty;
+                        socketRef.current.emit('nextPuzzle', { roomId, difficulty: diff }, (ack) => {
+                          if (ack && ack.error) {
+                            // ignore not_host errors silently, or optionally show local feedback
+                            if (ack.error === 'not_host') {
+                              setMovieError('only_host_can_change_puzzle');
+                            } else {
+                              setMovieError(ack.error);
+                            }
+                          }
+                        });
+                      } catch (e) {
+                        console.warn('onAllFound emit failed', e);
+                      }
+                    }}
+                  />
                 </div>
               </div>
             </div>

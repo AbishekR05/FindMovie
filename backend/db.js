@@ -53,6 +53,12 @@ async function removeUserFromRoom(roomId, username) {
   return roomsCol.findOne({ roomId });
 }
 
+async function setCurrentMovie(roomId, currentMovie) {
+  if (!roomsCol) return null;
+  await roomsCol.updateOne({ roomId }, { $set: { currentMovie } });
+  return roomsCol.findOne({ roomId });
+}
+
 module.exports = {
   init,
   enabled,

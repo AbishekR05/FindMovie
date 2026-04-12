@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>FindMovie — Admin</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header class="header">
+      <h1>FindMovie — Admin</h1>
+      <div class="controls">
+        <input id="apiUrl" placeholder="Admin API URL (default http://localhost:5000)" />
+        <input id="adminToken" placeholder="Admin token" />
+        <button id="loadRooms" class="accent">Load Rooms</button>
+      </div>
+    </header>
+
+    <main class="main">
+      <aside class="rooms">
+        <h2>Rooms</h2>
+        <div id="roomsList" class="list">No rooms loaded</div>
+      </aside>
+
+      <section class="messages">
+        <h2>Messages <span id="currentRoom"></span></h2>
+        <div id="messagesList" class="list muted">Select a room to view messages</div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="muted small">Admin frontend (static). Uses <code>x-admin-token</code> header or <code>?adminToken=</code> query param.</div>
+    </footer>
+  </div>
+
+  <script src="admin.js"></script>
+</body>
+</html>
